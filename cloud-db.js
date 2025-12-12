@@ -4,7 +4,7 @@
 class CloudDB {
     constructor() {
         // URL вашего Google Apps Script веб-приложения
-        this.API_URL = 'https://script.google.com/macros/s/AKfycbz0ZVSBXTdM9pxnDxlldDidPjogZKADzEtsToCXTR39XWaimqEKQvOmvGqnuawXsRqS/exec'; // ВАЖНО: Замените на ваш URL после настройки
+        this.API_URL = 'https://script.google.com/macros/s/AKfycbxd296wzjKUhI9DQQCxTVDGQBDAKPM6ESAtxeu2xKkPTWKne_t2ziFIaM50uPMK2-dVKw/exec'; // ВАЖНО: Замените на ваш URL после настройки
         
         // Флаг для использования облака
         this.useCloud = false;
@@ -44,6 +44,40 @@ class CloudDB {
         } catch (error) {
             console.warn('Cloud DB: Облачное хранилище недоступно:', error.message);
             return false;
+        }
+    }
+    
+    // Проверка подключения к облаку
+    async testConnection() {
+        if (!this.useCloud) {
+            return { 
+                success: false, 
+                message: 'Облачное хранилище отключено' 
+            };
+        }
+        
+        try {
+            const response = await fetch(`${this.API_URL}?action=ping&t=${Date.now()}`, {
+                method: 'GET',
+                mode: 'cors'
+            });
+            
+            if (response.ok) {
+                const result = await response.json();
+                return { 
+                    success: result.success || true, 
+                    message: 'Подключение к облаку установлено' 
+                };
+            }
+            return { 
+                success: false, 
+                message: `Ошибка HTTP: ${response.status}` 
+            };
+        } catch (error) {
+            return { 
+                success: false, 
+                message: `Ошибка подключения: ${error.message}` 
+            };
         }
     }
     
@@ -95,7 +129,7 @@ class CloudDB {
     }
     
     // Загрузка всех заказов (из облака + локальные)
-        async loadAllOrders() {
+    async loadAllOrders() {
         const localOrders = this.loadOrdersLocal();
         
         if (!this.useCloud) {
@@ -610,5 +644,3 @@ document.addEventListener('DOMContentLoaded', function() {
         }, 1000);
     }
 });
-
-
