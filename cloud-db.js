@@ -4,7 +4,8 @@
 class CloudDB {
     constructor() {
         // URL вашего Google Apps Script веб-приложения
-        this.API_URL = 'https://script.google.com/macros/s/AKfycbxd296wzjKUhI9DQQCxTVDGQBDAKPM6ESAtxeu2xKkPTWKne_t2ziFIaM50uPMK2-dVKw/exec'; // ВАЖНО: Замените на ваш URL после настройки
+        // ВАЖНО: Замените на ваш URL после настройки
+        this.API_URL = 'https://script.google.com/macros/s/AKfycbwidi9h-CG6dsUUqmGmhC0HqwS4nmxfM8mn5JIBIn9KRNOEY4vBy_VpzpT8rao8rN_b/exec';
         
         // Флаг для использования облака
         this.useCloud = false;
@@ -18,9 +19,20 @@ class CloudDB {
     
     init() {
         // Проверяем, указан ли URL API
-        if (this.API_URL && this.API_URL.startsWith('https://')) {
+        if (this.API_URL && this.API_URL.startsWith('https://script.google.com')) {
             this.useCloud = true;
             console.log('Cloud DB: Облачное хранилище активировано');
+            console.log('Cloud DB URL:', this.API_URL);
+            
+            // Тестируем подключение
+            this.testConnection().then(result => {
+                if (result.success) {
+                    console.log('Cloud DB: Подключение успешно:', result.message);
+                } else {
+                    console.warn('Cloud DB: Подключение не удалось:', result.message);
+                    this.useCloud = false;
+                }
+            });
         } else {
             console.log('Cloud DB: Используется локальное хранилище (укажите API_URL для облака)');
         }
@@ -33,7 +45,10 @@ class CloudDB {
         try {
             const response = await fetch(`${this.API_URL}?action=ping&t=${Date.now()}`, {
                 method: 'GET',
-                mode: 'cors'
+                mode: 'cors',
+                headers: {
+                    'Accept': 'application/json'
+                }
             });
             
             if (response.ok) {
@@ -59,14 +74,17 @@ class CloudDB {
         try {
             const response = await fetch(`${this.API_URL}?action=ping&t=${Date.now()}`, {
                 method: 'GET',
-                mode: 'cors'
+                mode: 'cors',
+                headers: {
+                    'Accept': 'application/json'
+                }
             });
             
             if (response.ok) {
                 const result = await response.json();
                 return { 
                     success: result.success || true, 
-                    message: 'Подключение к облаку установлено' 
+                    message: result.message || 'Подключение к облаку установлено' 
                 };
             }
             return { 
@@ -101,7 +119,8 @@ class CloudDB {
                 },
                 body: JSON.stringify({
                     action: 'addOrder',
-                    order: order
+                    order: order,
+                    timestamp: new Date().toISOString()
                 })
             });
             
@@ -119,7 +138,7 @@ class CloudDB {
             }
             
         } catch (error) {
-            console.error('Cloud DB: Ошибка сохранения в облако:', error);
+            console.error('Cloud DB: Ошибка сохранения в облако:', error.message);
             return { 
                 success: true, 
                 localOnly: true, 
@@ -138,8 +157,16 @@ class CloudDB {
         }
         
         try {
-            // Загружаем из облака
-            const response = await fetch(`${this.API_URL}?action=getOrders&t=${Date.now()}`);
+            // Загружаем из облака с JSONP для обхода CORS
+            console.log('Cloud DB: Загружаем заказы из облака...');
+            
+            const response = await fetch(`${this.API_URL}?action=getOrders&t=${Date.now()}`, {
+                method: 'GET',
+                mode: 'cors',
+                headers: {
+                    'Accept': 'application/json'
+                }
+            });
             
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}`);
@@ -196,7 +223,8 @@ class CloudDB {
                 body: JSON.stringify({
                     action: 'updateStatus',
                     orderId: orderId,
-                    status: status
+                    status: status,
+                    timestamp: new Date().toISOString()
                 })
             });
             
@@ -241,7 +269,8 @@ class CloudDB {
                 },
                 body: JSON.stringify({
                     action: 'deleteOrder',
-                    orderId: orderId
+                    orderId: orderId,
+                    timestamp: new Date().toISOString()
                 })
             });
             
@@ -284,7 +313,13 @@ class CloudDB {
         
         try {
             // Загружаем из облака
-            const response = await fetch(`${this.API_URL}?action=getOrders`);
+            const response = await fetch(`${this.API_URL}?action=getOrders&t=${Date.now()}`, {
+                method: 'GET',
+                mode: 'cors',
+                headers: {
+                    'Accept': 'application/json'
+                }
+            });
             
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}`);
@@ -308,6 +343,7 @@ class CloudDB {
                     try {
                         await this.saveOrder(order);
                         uploaded++;
+                        await new Promise(resolve => setTimeout(resolve, 100)); // Задержка между запросами
                     } catch (error) {
                         console.warn('Не удалось загрузить заказ в облако:', error);
                     }
@@ -315,13 +351,18 @@ class CloudDB {
             }
             
             // Загружаем обновленный список
-            const finalResponse = await fetch(`${this.API_URL}?action=getOrders`);
+            const finalResponse = await fetch(`${this.API_URL}?action=getOrders&t=${Date.now()}`, {
+                method: 'GET',
+                mode: 'cors'
+            });
             const finalResult = await finalResponse.json();
             const finalOrders = finalResult.data || [];
             
             // Сохраняем локально
             this.saveOrdersLocal(finalOrders);
             this.cachedOrders = finalOrders;
+            
+            console.log('Cloud DB: Синхронизация завершена');
             
             return {
                 success: true,
@@ -457,29 +498,32 @@ class CloudDB {
         
         if (this.useCloud) {
             try {
-                // Загружаем все заказы из облака
-                const cloudOrders = await this.loadAllOrders();
+                const response = await fetch(this.API_URL, {
+                    method: 'POST',
+                    mode: 'cors',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        action: 'clearAll',
+                        confirm: true
+                    })
+                });
                 
-                // Удаляем каждый заказ из облака
-                let deletedCount = 0;
-                let deleteErrors = [];
-                
-                for (const order of cloudOrders) {
-                    try {
-                        const deleteResult = await this.deleteOrder(order.id);
-                        if (deleteResult.success) {
-                            deletedCount++;
-                        }
-                    } catch (error) {
-                        deleteErrors.push(`Заказ #${order.id}: ${error.message}`);
+                if (response.ok) {
+                    const result = await response.json();
+                    if (result.success) {
+                        return {
+                            success: true,
+                            message: result.message || 'Все заказы очищены',
+                            cloudCleared: true
+                        };
                     }
                 }
                 
                 return {
                     success: true,
-                    message: `Удалено ${deletedCount} заказов`,
-                    deletedCount,
-                    errors: deleteErrors.length > 0 ? deleteErrors : null
+                    message: 'Локальные заказы удалены, облачные остались'
                 };
                 
             } catch (error) {
@@ -516,14 +560,14 @@ class CloudDB {
             const headers = ['ID', 'ФИО', 'Телефон', 'Email', 'Адрес', 'Тип', 'Сумма', 'Дата', 'Статус'];
             const rows = orders.map(order => [
                 order.id,
-                `"${order.fullName.replace(/"/g, '""')}"`,
-                order.phone,
-                `"${order.email.replace(/"/g, '""')}"`,
-                `"${order.address.replace(/"/g, '""')}"`,
-                order.orderType,
-                order.total,
-                order.date,
-                order.status
+                `"${(order.fullName || '').replace(/"/g, '""')}"`,
+                order.phone || '',
+                `"${(order.email || '').replace(/"/g, '""')}"`,
+                `"${(order.address || '').replace(/"/g, '""')}"`,
+                order.orderType || 'custom',
+                order.total || 0,
+                order.date || '',
+                order.status || 'Новый'
             ].join(','));
             
             content = [headers.join(','), ...rows].join('\n');
@@ -560,7 +604,7 @@ class CloudDB {
                     } else if (file.name.endsWith('.csv')) {
                         // Простой CSV парсинг
                         const lines = event.target.result.split('\n');
-                        const headers = lines[0].split(',').map(h => h.trim());
+                        const headers = lines[0].split(',').map(h => h.trim().replace(/^"(.*)"$/, '$1'));
                         importedOrders = lines.slice(1)
                             .filter(line => line.trim())
                             .map(line => {
@@ -623,30 +667,5 @@ document.addEventListener('DOMContentLoaded', function() {
     if (!window.cloudDB) {
         console.error('CloudDB не инициализирован!');
         window.cloudDB = new CloudDB();
-    }
-    
-    // Автоматически пытаемся загрузить из облака при загрузке админки
-    if (window.location.pathname.includes('admin.html') || document.getElementById('adminPanelContainer')) {
-        setTimeout(async () => {
-            const stats = cloudDB.getStats();
-            console.log('Cloud DB Статистика:', stats);
-            
-            // Если облако доступно, синхронизируем
-            if (cloudDB.useCloud) {
-                const cloudAvailable = await cloudDB.checkCloudAvailability();
-                if (cloudAvailable) {
-                    console.log('Cloud DB: Автосинхронизация...');
-                    cloudDB.syncOrders().then(result => {
-                        if (result.success) {
-                            console.log('Cloud DB: Автосинхронизация завершена');
-                            // Если есть функция обновления интерфейса
-                            if (typeof loadOrders === 'function') {
-                                loadOrders();
-                            }
-                        }
-                    });
-                }
-            }
-        }, 1000);
     }
 });
