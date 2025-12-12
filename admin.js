@@ -929,6 +929,7 @@ function logoutAdmin() {
 }
 
 // Синхронизация с облаком
+// Синхронизация с облаком
 async function syncWithCloud() {
     showNotification('Начинаем синхронизацию...', 'info');
     
@@ -939,38 +940,44 @@ async function syncWithCloud() {
             return;
         }
         
-        // Проверяем подключение к облаку
-        let testResult;
-        try {
-            // Проверяем наличие метода testConnection
-            if (typeof cloudDB.testConnection === 'function') {
-                testResult = await cloudDB.testConnection();
-            } else {
-                // Если метода нет, используем checkCloudAvailability
-                testResult = await cloudDB.checkCloudAvailability();
-                testResult = { success: testResult, message: testResult ? 'Подключение установлено' : 'Подключение не установлено' };
-            }
-        } catch (testError) {
-            console.error('Ошибка проверки подключения:', testError);
-            testResult = { success: false, message: 'Ошибка проверки подключения' };
-        }
-        
-        console.log('Тест подключения:', testResult);
-        
-        if (!testResult || !testResult.success) {
-            showNotification('Облако недоступно. Проверьте подключение.', 'error');
-            return;
-        }
+        // Сохраняем текущие локальные заказы перед синхронизацией
+        const localOrdersBefore = JSON.parse(localStorage.getItem('compyou_orders')) || [];
         
         // Выполняем синхронизацию
         const result = await cloudDB.syncOrders();
         
         if (result.success) {
-            showNotification(result.message, 'success');
-            // Перезагружаем заказы
-            await loadOrders();
+            // Принудительно обновляем локальные данные из cloudDB
+            try {
+                // Загружаем свежие данные из облака
+                const cloudOrders = await cloudDB.loadAllOrders();
+                
+                // Сохраняем в localStorage
+                localStorage.setItem('compyou_orders', JSON.stringify(cloudOrders));
+                
+                // Обновляем глобальные переменные
+                orders = cloudOrders;
+                filteredOrders = [...cloudOrders];
+                
+                // Обновляем интерфейс
+                updateStats();
+                displayOrders();
+                
+                showNotification(`Синхронизация завершена. Загружено ${result.uploaded || 0} заказов. Всего: ${cloudOrders.length}`, 'success');
+                
+            } catch (loadError) {
+                console.error('Ошибка загрузки после синхронизации:', loadError);
+                showNotification(`Синхронизация выполнена, но ошибка обновления: ${loadError.message}`, 'warning');
+                // Все равно обновляем интерфейс с текущими данными
+                await loadOrders();
+            }
+            
         } else {
-            showNotification(`Ошибка: ${result.error}`, 'error');
+            if (result.reason === 'cloud_disabled') {
+                showNotification('Облачное хранилище отключено. Проверьте настройки.', 'warning');
+            } else {
+                showNotification(`Ошибка синхронизации: ${result.error || 'Неизвестная ошибка'}`, 'error');
+            }
         }
         
     } catch (error) {
@@ -978,5 +985,7 @@ async function syncWithCloud() {
         showNotification(`Ошибка синхронизации: ${error.message}`, 'error');
     }
 
+
 }
+
 
