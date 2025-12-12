@@ -33,6 +33,9 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Инициализация мобильного UX
     initMobileAdminUX();
+    
+    // Загружаем заказы при загрузке страницы
+    loadOrders();
 });
 
 // Инициализация заказов (без автоматической синхронизации)
@@ -464,6 +467,31 @@ function closeOrderDetails() {
     if (mobileCloseBtn) {
         mobileCloseBtn.remove();
     }
+}
+
+// Функция для печати заказа (исправляет ошибку "printOrder is not defined")
+function printOrder() {
+    const orderDetails = document.getElementById('orderDetails');
+    if (!orderDetails) return;
+    
+    // Временно показываем все элементы для печати
+    const hiddenElements = [];
+    orderDetails.querySelectorAll('*').forEach(el => {
+        if (el.style.display === 'none') {
+            hiddenElements.push({ element: el, display: el.style.display });
+            el.style.display = 'block';
+        }
+    });
+    
+    // Печать
+    window.print();
+    
+    // Восстанавливаем скрытые элементы
+    hiddenElements.forEach(item => {
+        item.element.style.display = item.display;
+    });
+    
+    showNotification('Заказ подготовлен к печати');
 }
 
 // Обновить статус заказа
