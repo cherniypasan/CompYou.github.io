@@ -619,6 +619,12 @@ window.cloudDB = new CloudDB();
 
 // Инициализация при загрузке страницы
 document.addEventListener('DOMContentLoaded', function() {
+    // Проверяем, что cloudDB создан
+    if (!window.cloudDB) {
+        console.error('CloudDB не инициализирован!');
+        window.cloudDB = new CloudDB();
+    }
+    
     // Автоматически пытаемся загрузить из облака при загрузке админки
     if (window.location.pathname.includes('admin.html') || document.getElementById('adminPanelContainer')) {
         setTimeout(async () => {
